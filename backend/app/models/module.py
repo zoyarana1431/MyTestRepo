@@ -1,0 +1,27 @@
+from datetime import datetime
+
+from sqlalchemy import DateTime, ForeignKey, Integer, String, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db.base import Base
+
+
+class Module(Base):
+    __tablename__ = "modules"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    parent_id: Mapped[int | None] = mapped_column(ForeignKey("modules.id", ondelete="CASCADE"), nullable=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    project = relationship("Project", back_populates="modules")
+    parent = relationship("Module", remote_side="Module.id", back_populates="children")
+    children = relationship("Module", back_populates="parent", cascade="all, delete-orphan")
+    requirements = relationship("Requirement", back_populates="module")
+    test_cases = relationship("TestCase", back_populates="module")
+    defects = relationship("Defect", back_populates="module")
