@@ -1,6 +1,15 @@
 import { clearToken, getToken } from "./auth-storage";
 
-const base = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+function apiBase(): string {
+  const fromEnv = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "");
+  if (fromEnv) {
+    return fromEnv;
+  }
+  if (typeof window === "undefined") {
+    return (process.env.API_PROXY_TARGET ?? "http://127.0.0.1:8000").replace(/\/$/, "");
+  }
+  return "";
+}
 
 export class ApiError extends Error {
   constructor(
@@ -27,11 +36,21 @@ export async function apiFetch<T>(
   if (options.json !== undefined) {
     (headers as Record<string, string>)["Content-Type"] = "application/json";
   }
-  const res = await fetch(`${base}${path}`, {
-    ...options,
-    headers,
-    body: options.json !== undefined ? JSON.stringify(options.json) : options.body,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${apiBase()}${path}`, {
+      ...options,
+      headers,
+      body: options.json !== undefined ? JSON.stringify(options.json) : options.body,
+    });
+  } catch (e) {
+    const hint =
+      "Could not reach the API. From the repo, start the backend on port 8000 (e.g. `uvicorn app.main:app --reload --port 8000` in the `backend` folder), then refresh. If you use `NEXT_PUBLIC_API_URL`, it must match where the API is running.";
+    if (e instanceof TypeError && String(e.message).toLowerCase().includes("fetch")) {
+      throw new ApiError(hint, 0);
+    }
+    throw e;
+  }
   if (res.status === 401) {
     clearToken();
   }
@@ -65,11 +84,21 @@ export async function apiUploadFile<T>(path: string, formData: FormData): Promis
   if (token) {
     (headers as Record<string, string>)["Authorization"] = `Bearer ${token}`;
   }
-  const res = await fetch(`${base}${path}`, {
-    method: "POST",
-    headers,
-    body: formData,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${apiBase()}${path}`, {
+      method: "POST",
+      headers,
+      body: formData,
+    });
+  } catch (e) {
+    const hint =
+      "Could not reach the API. Start the backend on port 8000, or fix NEXT_PUBLIC_API_URL.";
+    if (e instanceof TypeError && String(e.message).toLowerCase().includes("fetch")) {
+      throw new ApiError(hint, 0);
+    }
+    throw e;
+  }
   if (res.status === 401) {
     clearToken();
   }
@@ -98,12 +127,33 @@ export async function apiDownloadBlob(path: string): Promise<Blob> {
   if (token) {
     (headers as Record<string, string>)["Authorization"] = `Bearer ${token}`;
   }
-  const res = await fetch(`${base}${path}`, { headers });
+  let res: Response;
+  try {
+    res = await fetch(`${apiBase()}${path}`, { headers });
+  } catch (e) {
+    const hint = "Could not reach the API. Start the backend on port 8000, or fix NEXT_PUBLIC_API_URL.";
+    if (e instanceof TypeError && String(e.message).toLowerCase().includes("fetch")) {
+      throw new ApiError(hint, 0);
+    }
+    throw e;
+  }
   if (res.status === 401) {
     clearToken();
   }
   if (!res.ok) {
-    throw new ApiError(res.statusText, res.status);
+    const text = await res.text();
+    let msg = res.statusText;
+    if (text) {
+      try {
+        const data = JSON.parse(text) as unknown;
+        if (typeof data === "object" && data !== null && "detail" in data) {
+          msg = String((data as { detail: unknown }).detail);
+        }
+      } catch {
+        if (text.length < 500) msg = text;
+      }
+    }
+    throw new ApiError(msg, res.status);
   }
   return res.blob();
 }

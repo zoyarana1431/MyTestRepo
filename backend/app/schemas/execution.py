@@ -45,3 +45,5 @@ class ExecutionRead(BaseModel):
 class ExecutionListItem(ExecutionRead):
     test_case_code: str = ""
     test_case_title: str = ""
+    execution_cycle_code: str | None = None
+    execution_cycle_name: str | None = None

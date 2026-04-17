@@ -17,6 +17,7 @@ from app.models.project import Project, ProjectMembership
 from app.models.user import User
 from app.schemas.project import (
     ProjectCreate,
+    ProjectListItem,
     ProjectMemberInvite,
     ProjectMemberRoleUpdate,
     ProjectMemberWithUserRead,
@@ -24,31 +25,53 @@ from app.schemas.project import (
     ProjectUpdate,
 )
 from app.services.id_generator import next_code
+from app.services.project_stats import project_card_stats_map
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
 
-@router.get("", response_model=list[ProjectRead])
-def list_projects(user: CurrentUser, db: Session = Depends(get_db_session)) -> list[Project]:
+@router.get("", response_model=list[ProjectListItem])
+def list_projects(user: CurrentUser, db: Session = Depends(get_db_session)) -> list[ProjectListItem]:
     q = (
         select(Project)
         .join(ProjectMembership)
         .where(ProjectMembership.user_id == user.id)
         .order_by(Project.created_at.desc())
     )
-    return list(db.execute(q).scalars().all())
+    projs = list(db.execute(q).scalars().all())
+    ids = [p.id for p in projs]
+    stats = project_card_stats_map(db, ids)
+    out: list[ProjectListItem] = []
+    for p in projs:
+        tc, pr, bugs = stats.get(p.id, (0, 0.0, 0))
+        base = ProjectRead.model_validate(p)
+        out.append(ProjectListItem(**base.model_dump(), test_cases_count=tc, pass_rate_pct=pr, open_defects_count=bugs))
+    return out
 
 
 @router.post("", response_model=ProjectRead, status_code=status.HTTP_201_CREATED)
 def create_project(body: ProjectCreate, user: CurrentUser, db: Session = Depends(get_db_session)) -> Project:
-    code = next_code(db, "project", "PRJ", width=3)
+    if body.code:
+        existing = db.execute(select(Project).where(Project.code == body.code)).scalar_one_or_none()
+        if existing is not None:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Project code already in use")
+        code = body.code
+    else:
+        code = next_code(db, "project", "PRJ", width=3)
+
+    st = body.status.value if isinstance(body.status, ProjectStatus) else str(body.status)
+    archived_at: datetime | None = None
+    if st == ProjectStatus.archived.value:
+        archived_at = datetime.now(timezone.utc)
+
     project = Project(
         code=code,
         name=body.name,
         description=body.description,
         client_company=body.client_company,
         release_version=body.release_version,
-        status=ProjectStatus.active.value,
+        status=st,
+        archived_at=archived_at,
     )
     db.add(project)
     db.flush()
@@ -90,7 +113,7 @@ def update_project(
             data["status"] = st.value
         if data["status"] == ProjectStatus.archived.value:
             project.archived_at = datetime.now(timezone.utc)
-        elif data["status"] == ProjectStatus.active.value:
+        else:
             project.archived_at = None
     for k, v in data.items():
         setattr(project, k, v)

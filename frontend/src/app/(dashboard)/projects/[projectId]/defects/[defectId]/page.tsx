@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { ModuleSubmoduleSelect } from "@/components/modules/module-submodule-select";
 import { apiDownloadBlob, apiFetch, apiUploadFile } from "@/lib/api";
 import { DEFECT_STATUS, PRIORITY, SEVERITY } from "@/lib/qa-options";
 import { useProjectRole } from "@/hooks/use-project-role";
@@ -226,24 +227,14 @@ export default function DefectDetailPage() {
             </select>
           </div>
         </div>
-        <div>
-          <label className="text-xs font-medium text-ink-muted">Module</label>
-          <select
-            disabled={!isAdmin}
-            className="mt-1 w-full rounded-md border border-border bg-surface px-3 py-2 text-sm disabled:opacity-60"
-            value={d.module_id ?? ""}
-            onChange={(e) =>
-              setD({ ...d, module_id: e.target.value === "" ? null : Number(e.target.value) })
-            }
-          >
-            <option value="">— None —</option>
-            {modules.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}
-              </option>
-            ))}
-          </select>
-        </div>
+        <ModuleSubmoduleSelect
+          modules={modules}
+          value={d.module_id}
+          onChange={(id) => setD({ ...d, module_id: id })}
+          disabled={!isAdmin}
+          selectClassName="mt-1 w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-ink disabled:opacity-60"
+          labelClassName="text-xs font-medium text-ink-muted"
+        />
         <div>
           <label className="text-xs font-medium text-ink-muted">Requirement</label>
           <select

@@ -7,11 +7,14 @@ from app.api.v1 import (
     defects,
     execution_cycles,
     executions,
+    exports,
+    library,
     modules,
     projects,
     requirements,
     rtm,
     test_cases,
+    workspace_dashboard,
 )
 
 api_router = APIRouter(prefix="/api/v1")
@@ -26,3 +29,6 @@ api_router.include_router(defects.router)
 api_router.include_router(attachments.router)
 api_router.include_router(rtm.router)
 api_router.include_router(dashboard_reporting.router)
+api_router.include_router(workspace_dashboard.router)
+api_router.include_router(library.router)
+api_router.include_router(exports.router)

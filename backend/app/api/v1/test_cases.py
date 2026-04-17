@@ -1,11 +1,12 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import desc, func, or_, select
 from sqlalchemy.orm import Session
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.deps import CurrentUser, get_db_session, get_project_or_404, require_project_admin, require_project_member
+from app.models.execution import Execution
 from app.models.module import Module
 from app.models.requirement import Requirement
 from app.models.test_case import TestCase, TestCaseStep
@@ -82,6 +83,23 @@ def _apply_tc_update(tc: TestCase, data: dict) -> None:
         setattr(tc, k, v)
 
 
+def _last_run_status_map(db: Session, project_id: int, tc_ids: list[int]) -> dict[int, str | None]:
+    if not tc_ids:
+        return {}
+    rows = db.execute(
+        select(Execution)
+        .where(Execution.project_id == project_id, Execution.test_case_id.in_(tc_ids))
+        .order_by(Execution.test_case_id, desc(Execution.executed_at), desc(Execution.id))
+    ).scalars().all()
+    out: dict[int, str | None] = {}
+    for e in rows:
+        if e.test_case_id in out:
+            continue
+        raw = (e.final_status or e.status or "").strip().lower()
+        out[e.test_case_id] = raw if raw else None
+    return out
+
+
 @router.get("", response_model=list[TestCaseListItem])
 def list_test_cases(
     project_id: int,
@@ -89,10 +107,17 @@ def list_test_cases(
     db: Session = Depends(get_db_session),
     q: str | None = Query(None),
     status_filter: str | None = Query(None, alias="status"),
+    test_type_filter: str | None = Query(None, alias="test_type"),
+    priority_filter: str | None = Query(None, alias="priority"),
     module_id: int | None = None,
 ) -> list[TestCaseListItem]:
     require_project_member(db, user, project_id)
     get_project_or_404(db, project_id)
+
+    mod_map = {
+        m.id: m.name
+        for m in db.execute(select(Module).where(Module.project_id == project_id)).scalars().all()
+    }
 
     stmt = select(TestCase).where(TestCase.project_id == project_id, TestCase.deleted_at.is_(None))
     if q:
@@ -106,6 +131,10 @@ def list_test_cases(
         )
     if status_filter:
         stmt = stmt.where(TestCase.status == status_filter)
+    if test_type_filter:
+        stmt = stmt.where(TestCase.test_type == test_type_filter)
+    if priority_filter:
+        stmt = stmt.where(TestCase.priority == priority_filter)
     if module_id is not None:
         stmt = stmt.where(TestCase.module_id == module_id)
 
@@ -126,15 +155,19 @@ def list_test_cases(
         .group_by(TestCaseStep.test_case_id)
     ).all()
     st_map = {r[0]: r[1] for r in st_rows}
+    last_run = _last_run_status_map(db, project_id, ids)
 
     out: list[TestCaseListItem] = []
     for tc in tcs:
         base = TestCaseRead.model_validate(tc)
+        mn = mod_map.get(tc.module_id) if tc.module_id is not None else None
         out.append(
             TestCaseListItem(
                 **base.model_dump(),
                 linked_requirement_count=rq_map.get(tc.id, 0),
                 step_count=st_map.get(tc.id, 0),
+                module_name=mn,
+                last_run_status=last_run.get(tc.id),
             )
         )
     return out

@@ -44,6 +44,7 @@ class RequirementRead(BaseModel):
 
 class RequirementListItem(RequirementRead):
     linked_test_case_count: int = 0
+    module_name: str | None = None
 
 
 class LinkedTestCaseBrief(BaseModel):
@@ -51,12 +52,16 @@ class LinkedTestCaseBrief(BaseModel):
     code: str
     title: str
     status: str
+    priority: str
 
     model_config = {"from_attributes": True}
 
 
 class RequirementDetail(RequirementRead):
     test_cases: list[LinkedTestCaseBrief] = []
+    open_defects_count: int = 0
+    total_executions_count: int = 0
+    module_name: str | None = None
 
 
 class RequirementTestCasesLink(BaseModel):

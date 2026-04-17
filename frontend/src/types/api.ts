@@ -20,6 +20,28 @@ export type Project = {
   created_at: string;
 };
 
+/** Returned by `GET /api/v1/projects` with aggregate QA stats. */
+export type ProjectListItem = Project & {
+  test_cases_count: number;
+  pass_rate_pct: number;
+  open_defects_count: number;
+};
+
+export type ReusableLibraryItem = {
+  id: number;
+  library_code: string;
+  project_id: number;
+  project_code: string;
+  project_name: string;
+  title: string;
+  category_line: string;
+  description: string | null;
+  test_type: string;
+  priority: string;
+  tags: string[] | null;
+  preconditions: string | null;
+};
+
 export type ProjectMember = {
   user_id: number;
   email: string;
@@ -33,6 +55,7 @@ export type ModuleNode = {
   project_id: number;
   parent_id: number | null;
   name: string;
+  description: string | null;
   sort_order: number;
   created_at: string;
   updated_at: string;
@@ -44,6 +67,7 @@ export type ModuleFlat = {
   project_id: number;
   parent_id: number | null;
   name: string;
+  description: string | null;
   sort_order: number;
   created_at: string;
   updated_at: string;
@@ -66,6 +90,8 @@ export type Requirement = {
 
 export type RequirementListItem = Requirement & {
   linked_test_case_count: number;
+  /** Present when API returns module name for the list row. */
+  module_name?: string | null;
 };
 
 export type LinkedTestCaseBrief = {
@@ -73,10 +99,14 @@ export type LinkedTestCaseBrief = {
   code: string;
   title: string;
   status: string;
+  priority?: string;
 };
 
 export type RequirementDetail = Requirement & {
   test_cases: LinkedTestCaseBrief[];
+  open_defects_count?: number;
+  total_executions_count?: number;
+  module_name?: string | null;
 };
 
 export type TestCaseStep = {
@@ -114,6 +144,8 @@ export type TestCase = {
 export type TestCaseListItem = TestCase & {
   linked_requirement_count: number;
   step_count: number;
+  module_name?: string | null;
+  last_run_status?: string | null;
 };
 
 export type LinkedRequirementBrief = {
@@ -142,6 +174,16 @@ export type ExecutionCycle = {
   updated_at: string;
 };
 
+/** `GET /execution-cycles` includes per-cycle execution aggregates. */
+export type ExecutionCycleListItem = ExecutionCycle & {
+  total_executions: number;
+  pass_count: number;
+  fail_count: number;
+  blocked_count: number;
+  not_run_count: number;
+  retest_count: number;
+};
+
 export type Execution = {
   id: number;
   project_id: number;
@@ -166,6 +208,8 @@ export type Execution = {
 export type ExecutionListItem = Execution & {
   test_case_code: string;
   test_case_title: string;
+  execution_cycle_code: string | null;
+  execution_cycle_name: string | null;
 };
 
 export type Defect = {
@@ -202,6 +246,58 @@ export type Attachment = {
   uploaded_at: string;
 };
 
+export type WorkspaceRecentDefect = {
+  project_id: number;
+  code: string;
+  title: string;
+  severity: string;
+  status: string;
+  created_at: string;
+};
+
+export type WorkspaceRecentExecution = {
+  project_id: number;
+  code: string;
+  test_case_code: string;
+  test_case_title: string;
+  status: string;
+  executed_at: string;
+};
+
+export type WorkspaceProjectRow = {
+  id: number;
+  code: string;
+  name: string;
+  status: string;
+  requirements_total: number;
+  test_cases_total: number;
+  executions_total: number;
+  execution_pass_pct: number;
+  requirement_coverage_pct: number;
+};
+
+export type WorkspaceDashboard = {
+  requirements_total: number;
+  test_cases_total: number;
+  executions_total: number;
+  defects_total: number;
+  defects_open: number;
+  defects_closed: number;
+  requirement_coverage_pct: number;
+  execution_pass_pct: number;
+  execution_fail_pct: number;
+  execution_blocked_pct: number;
+  execution_not_run_pct: number;
+  execution_retest_pct: number;
+  executions_by_status: Record<string, number>;
+  defects_by_severity: Record<string, number>;
+  active_run_cycles: number;
+  active_projects: number;
+  projects: WorkspaceProjectRow[];
+  recent_defects: WorkspaceRecentDefect[];
+  recent_executions: WorkspaceRecentExecution[];
+};
+
 export type DashboardSummary = {
   project_id: number;
   requirements_total: number;
@@ -233,6 +329,8 @@ export type RTMRequirementRow = {
   requirement_id: number;
   code: string;
   title: string;
+  priority: string;
+  requirement_status: string;
   module_id: number | null;
   module_name: string | null;
   linked_test_case_count: number;
@@ -266,4 +364,8 @@ export type RTMProjectSummary = {
   defect_open: number;
   defect_closed: number;
   coverage_pct: number;
+  requirement_tc_coverage_pct: number;
+  passing_requirements: number;
+  failing_requirements: number;
+  not_covered_requirements: number;
 };

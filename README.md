@@ -38,7 +38,8 @@ Set `SECRET_KEY` in the environment for anything beyond local dev (see `.env.exa
    pip install -r requirements.txt
    set DATABASE_URL=postgresql+psycopg2://qatm:qatm@localhost:5432/qatm
    alembic upgrade head
-   uvicorn app.main:app --reload
+   uvicorn app.main:app --reload --port 8000
+   # Or: uvicorn main:app --reload --port 8000  (shim in backend/main.py)
    ```
 
 3. Frontend:

@@ -8,11 +8,14 @@ class ProjectRole(str, enum.Enum):
 
 class ProjectStatus(str, enum.Enum):
     active = "active"
+    on_hold = "on_hold"
+    completed = "completed"
     archived = "archived"
 
 
 class RequirementStatus(str, enum.Enum):
     draft = "draft"
+    in_review = "in_review"
     approved = "approved"
     in_progress = "in_progress"
     completed = "completed"
@@ -38,6 +41,9 @@ class TestCaseType(str, enum.Enum):
     smoke = "smoke"
     usability = "usability"
     integration = "integration"
+    performance = "performance"
+    security = "security"
+    api = "api"
     other = "other"
 
 

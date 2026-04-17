@@ -6,7 +6,9 @@ from sqlalchemy.orm import Session
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.deps import CurrentUser, get_db_session, get_project_or_404, require_project_admin, require_project_member
+from app.models.defect import Defect
 from app.models.enums import RequirementPriority, RequirementStatus
+from app.models.execution import Execution
 from app.models.links import requirement_test_cases
 from app.models.module import Module
 from app.models.requirement import Requirement
@@ -49,6 +51,53 @@ def _tc_brief_title(tc: TestCase) -> str:
     return tc.code
 
 
+def _requirement_detail(db: Session, project_id: int, req: Requirement) -> RequirementDetail:
+    db.refresh(req, ["test_cases"])
+    tcs = sorted(req.test_cases, key=lambda t: t.code)
+    briefs = [
+        LinkedTestCaseBrief(
+            id=tc.id,
+            code=tc.code,
+            title=_tc_brief_title(tc),
+            status=tc.status,
+            priority=tc.priority,
+        )
+        for tc in tcs
+    ]
+    base = RequirementRead.model_validate(req)
+    open_defects = int(
+        db.execute(
+            select(func.count())
+            .select_from(Defect)
+            .where(
+                Defect.project_id == project_id,
+                Defect.requirement_id == req.id,
+                Defect.deleted_at.is_(None),
+                Defect.status.in_(["open", "in_progress"]),
+            )
+        ).scalar_one()
+    )
+    total_exec = int(
+        db.execute(
+            select(func.count())
+            .select_from(Execution)
+            .where(Execution.project_id == project_id, Execution.requirement_id == req.id)
+        ).scalar_one()
+    )
+    module_name: str | None = None
+    if req.module_id is not None:
+        mod = db.get(Module, req.module_id)
+        module_name = mod.name if mod else None
+
+    return RequirementDetail(
+        **base.model_dump(),
+        test_cases=briefs,
+        open_defects_count=open_defects,
+        total_executions_count=total_exec,
+        module_name=module_name,
+    )
+
+
 @router.get("", response_model=list[RequirementListItem])
 def list_requirements(
     project_id: int,
@@ -56,10 +105,16 @@ def list_requirements(
     db: Session = Depends(get_db_session),
     q: str | None = Query(None, description="Search title or code"),
     status_filter: str | None = Query(None, alias="status"),
+    priority_filter: str | None = Query(None, alias="priority"),
     module_id: int | None = None,
 ) -> list[RequirementListItem]:
     require_project_member(db, user, project_id)
     get_project_or_404(db, project_id)
+
+    mod_map = {
+        m.id: m.name
+        for m in db.execute(select(Module).where(Module.project_id == project_id)).scalars().all()
+    }
 
     cnt = func.count(requirement_test_cases.c.test_case_id).label("tc_count")
     stmt = (
@@ -73,6 +128,8 @@ def list_requirements(
         stmt = stmt.where((Requirement.title.ilike(like)) | (Requirement.code.ilike(like)))
     if status_filter:
         stmt = stmt.where(Requirement.status == status_filter)
+    if priority_filter:
+        stmt = stmt.where(Requirement.priority == priority_filter)
     if module_id is not None:
         stmt = stmt.where(Requirement.module_id == module_id)
 
@@ -81,7 +138,14 @@ def list_requirements(
     out: list[RequirementListItem] = []
     for req, tc_count in rows:
         base = RequirementRead.model_validate(req)
-        out.append(RequirementListItem(**base.model_dump(), linked_test_case_count=int(tc_count or 0)))
+        mn = mod_map.get(req.module_id) if req.module_id is not None else None
+        out.append(
+            RequirementListItem(
+                **base.model_dump(),
+                linked_test_case_count=int(tc_count or 0),
+                module_name=mn,
+            )
+        )
     return out
 
 
@@ -126,13 +190,7 @@ def get_requirement(
     if req is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Requirement not found")
 
-    db.refresh(req, ["test_cases"])
-    tcs = sorted(req.test_cases, key=lambda t: t.code)
-    briefs = [
-        LinkedTestCaseBrief(id=tc.id, code=tc.code, title=_tc_brief_title(tc), status=tc.status) for tc in tcs
-    ]
-    base = RequirementRead.model_validate(req)
-    return RequirementDetail(**base.model_dump(), test_cases=briefs)
+    return _requirement_detail(db, project_id, req)
 
 
 @router.patch("/{requirement_id}", response_model=RequirementRead)
@@ -212,10 +270,4 @@ def link_requirement_test_cases(
         req.test_cases = list(tcs)
         db.commit()
 
-    db.refresh(req, ["test_cases"])
-    tcs = sorted(req.test_cases, key=lambda t: t.code)
-    briefs = [
-        LinkedTestCaseBrief(id=tc.id, code=tc.code, title=_tc_brief_title(tc), status=tc.status) for tc in tcs
-    ]
-    base = RequirementRead.model_validate(req)
-    return RequirementDetail(**base.model_dump(), test_cases=briefs)
+    return _requirement_detail(db, project_id, req)

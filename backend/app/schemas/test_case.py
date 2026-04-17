@@ -103,6 +103,8 @@ class LinkedRequirementBrief(BaseModel):
 class TestCaseListItem(TestCaseRead):
     linked_requirement_count: int = 0
     step_count: int = 0
+    module_name: str | None = None
+    last_run_status: str | None = None
 
 
 class TestCaseDetail(TestCaseRead):

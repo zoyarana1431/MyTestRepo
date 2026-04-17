@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.db.base import Base
+from app.db.schema_patches import apply_engine_schema_patches
 from app.db.session import engine
 import app.models  # noqa: F401
 
@@ -15,6 +16,7 @@ import app.models  # noqa: F401
 async def lifespan(app: FastAPI):
     Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
     Base.metadata.create_all(bind=engine)
+    apply_engine_schema_patches(engine)
     yield
 
 

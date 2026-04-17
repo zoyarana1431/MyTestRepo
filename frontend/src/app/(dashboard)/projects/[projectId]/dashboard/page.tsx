@@ -2,6 +2,7 @@
 
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { ModuleSubmoduleSelect } from "@/components/modules/module-submodule-select";
 import { apiFetch } from "@/lib/api";
 import type { DashboardSummary, ExecutionCycle, ModuleFlat } from "@/types/api";
 
@@ -67,19 +68,14 @@ export default function ProjectDashboardPage() {
         <p className="mt-1 text-sm text-ink-muted">Filtered metrics for this project workspace.</p>
       </div>
 
-      <div className="flex flex-wrap gap-3 rounded-xl border border-border bg-surface-muted/30 p-4">
-        <select
-          className="rounded-md border border-border bg-surface px-2 py-1.5 text-sm"
-          value={moduleId}
-          onChange={(e) => setModuleId(e.target.value)}
-        >
-          <option value="">All modules</option>
-          {modules.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.name}
-            </option>
-          ))}
-        </select>
+      <div className="flex flex-wrap items-end gap-4 rounded-xl border border-border bg-surface-muted/30 p-4">
+        <ModuleSubmoduleSelect
+          variant="filter"
+          modules={modules}
+          value={moduleId === "" ? null : Number(moduleId)}
+          onChange={(id) => setModuleId(id == null ? "" : String(id))}
+          className="min-w-[12rem]"
+        />
         <select
           className="rounded-md border border-border bg-surface px-2 py-1.5 text-sm"
           value={cycleId}

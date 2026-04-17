@@ -58,11 +58,14 @@ def list_defects(
     status_filter: str | None = Query(None, alias="status"),
     severity: str | None = None,
     priority: str | None = None,
+    test_case_id: int | None = None,
 ) -> list[Defect]:
     require_project_member(db, user, project_id)
     get_project_or_404(db, project_id)
 
     stmt = select(Defect).where(Defect.project_id == project_id, Defect.deleted_at.is_(None))
+    if test_case_id is not None:
+        stmt = stmt.where(Defect.test_case_id == test_case_id)
     if status_filter:
         stmt = stmt.where(Defect.status == status_filter)
     if severity:

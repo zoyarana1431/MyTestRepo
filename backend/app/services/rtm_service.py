@@ -19,6 +19,7 @@ class RTMFilters:
     date_from: datetime | None = None
     date_to: datetime | None = None
     execution_cycle_id: int | None = None
+    requirement_status: str | None = None
 
 
 CLOSED_DEFECT = frozenset({"closed", "resolved", "duplicate"})
@@ -67,6 +68,8 @@ def rtm_by_requirement(db: Session, project_id: int, f: RTMFilters) -> list[RTMR
     for r in reqs:
         if f.module_id is not None and r.module_id != f.module_id:
             continue
+        if f.requirement_status is not None and r.status != f.requirement_status:
+            continue
         tc_ids = list(
             db.execute(
                 select(requirement_test_cases.c.test_case_id).where(requirement_test_cases.c.requirement_id == r.id)
@@ -94,6 +97,8 @@ def rtm_by_requirement(db: Session, project_id: int, f: RTMFilters) -> list[RTMR
                 requirement_id=r.id,
                 code=r.code,
                 title=r.title,
+                priority=r.priority,
+                requirement_status=r.status,
                 module_id=r.module_id,
                 module_name=mod_map.get(r.module_id) if r.module_id else None,
                 linked_test_case_count=linked_tc,
@@ -122,6 +127,8 @@ def rtm_by_module(db: Session, project_id: int, f: RTMFilters) -> list[RTMModule
     agg: dict[int | None, dict[str, int]] = {}
     for r in reqs:
         if f.module_id is not None and r.module_id != f.module_id:
+            continue
+        if f.requirement_status is not None and r.status != f.requirement_status:
             continue
         mid = r.module_id
         if mid not in agg:
@@ -155,11 +162,6 @@ def rtm_by_module(db: Session, project_id: int, f: RTMFilters) -> list[RTMModule
 
 
 def rtm_project_summary(db: Session, project_id: int, f: RTMFilters) -> RTMProjectSummary:
-    req_total = db.execute(
-        select(func.count()).select_from(Requirement).where(
-            Requirement.project_id == project_id, Requirement.deleted_at.is_(None)
-        )
-    ).scalar_one()
     tc_total = db.execute(
         select(func.count()).select_from(TestCase).where(TestCase.project_id == project_id, TestCase.deleted_at.is_(None))
     ).scalar_one()
@@ -185,29 +187,32 @@ def rtm_project_summary(db: Session, project_id: int, f: RTMFilters) -> RTMProje
     open_n = sum(1 for d in defects if d.status not in CLOSED_DEFECT)
     closed_n = sum(1 for d in defects if d.status in CLOSED_DEFECT)
 
-    reqs = db.execute(
-        select(Requirement).where(Requirement.project_id == project_id, Requirement.deleted_at.is_(None))
-    ).scalars().all()
-    covered = 0
-    for r in reqs:
-        if f.module_id is not None and r.module_id != f.module_id:
-            continue
-        tc_ids = list(
-            db.execute(
-                select(requirement_test_cases.c.test_case_id).where(requirement_test_cases.c.requirement_id == r.id)
-            ).scalars().all()
-        )
-        exes = _exec_query(db, project_id, tc_ids, f)
-        if tc_ids and exes and any(e.status == "pass" for e in exes):
-            covered += 1
-    cov = 100.0 * covered / req_total if req_total else 0.0
+    detail_rows = rtm_by_requirement(db, project_id, f)
+    n = len(detail_rows)
+    covered = sum(
+        1 for x in detail_rows if x.linked_test_case_count > 0 and x.pass_count > 0
+    )
+    cov = 100.0 * covered / n if n else 0.0
+
+    not_covered = sum(1 for x in detail_rows if x.linked_test_case_count == 0)
+    req_tc_cov = 100.0 * (n - not_covered) / n if n else 0.0
+    passing_req = sum(
+        1
+        for x in detail_rows
+        if x.linked_test_case_count > 0 and x.fail_count == 0 and x.pass_count > 0
+    )
+    failing_req = sum(1 for x in detail_rows if x.fail_count > 0 or (x.latest_status == "fail"))
 
     return RTMProjectSummary(
         project_id=project_id,
-        requirement_total=int(req_total or 0),
+        requirement_total=n,
         test_case_total=int(tc_total or 0),
         execution_total=int(ex_total or 0),
         defect_open=open_n,
         defect_closed=closed_n,
         coverage_pct=round(cov, 1),
+        requirement_tc_coverage_pct=round(req_tc_cov, 1),
+        passing_requirements=passing_req,
+        failing_requirements=failing_req,
+        not_covered_requirements=not_covered,
     )

@@ -4,16 +4,28 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch, ApiError } from "@/lib/api";
-import { PRIORITY, REQUIREMENT_STATUS } from "@/lib/qa-options";
+import { moduleCellLabel } from "@/lib/module-display";
+import {
+  priorityPillClass,
+  requirementPriorityLabel,
+  requirementStatusLabel,
+  statusDotClass,
+  tcStatusBadgeClass,
+} from "@/lib/requirement-presentation";
 import { useProjectRole } from "@/hooks/use-project-role";
-import type { ModuleFlat, RequirementDetail, TestCaseListItem } from "@/types/api";
+import type { ModuleFlat, RequirementDetail } from "@/types/api";
 
-function parseTags(s: string): string[] | null {
-  const t = s
-    .split(",")
-    .map((x) => x.trim())
-    .filter(Boolean);
-  return t.length ? t : null;
+function BackIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path d="M15 18l-6-6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function formatShortDate(iso: string) {
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
 export default function RequirementDetailPage() {
@@ -25,36 +37,16 @@ export default function RequirementDetailPage() {
 
   const [detail, setDetail] = useState<RequirementDetail | null>(null);
   const [modules, setModules] = useState<ModuleFlat[]>([]);
-  const [allTestCases, setAllTestCases] = useState<TestCaseListItem[]>([]);
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [moduleId, setModuleId] = useState<string>("");
-  const [priority, setPriority] = useState("medium");
-  const [status, setStatus] = useState("draft");
-  const [sourceReference, setSourceReference] = useState("");
-  const [tags, setTags] = useState("");
-  const [selectedTc, setSelectedTc] = useState<Set<number>>(new Set());
   const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
-    const [d, mods, tcs] = await Promise.all([
+    const [d, mods] = await Promise.all([
       apiFetch<RequirementDetail>(`/api/v1/projects/${projectId}/requirements/${requirementId}`),
       apiFetch<ModuleFlat[]>(`/api/v1/projects/${projectId}/modules`),
-      apiFetch<TestCaseListItem[]>(`/api/v1/projects/${projectId}/test-cases`),
     ]);
     setDetail(d);
     setModules(mods);
-    setAllTestCases(tcs);
-    setTitle(d.title);
-    setDescription(d.description ?? "");
-    setModuleId(d.module_id != null ? String(d.module_id) : "");
-    setPriority(d.priority);
-    setStatus(d.status);
-    setSourceReference(d.source_reference ?? "");
-    setTags((d.tags ?? []).join(", "));
-    setSelectedTc(new Set(d.test_cases.map((t) => t.id)));
   }, [projectId, requirementId]);
 
   useEffect(() => {
@@ -63,242 +55,189 @@ export default function RequirementDetailPage() {
       .finally(() => setLoading(false));
   }, [load]);
 
-  async function saveMeta(e: React.FormEvent) {
-    e.preventDefault();
-    if (!isAdmin || !detail) return;
-    setPending(true);
-    setError(null);
-    try {
-      await apiFetch(`/api/v1/projects/${projectId}/requirements/${requirementId}`, {
-        method: "PATCH",
-        json: {
-          title: title.trim(),
-          description: description.trim() || null,
-          module_id: moduleId === "" ? null : Number(moduleId),
-          priority,
-          status,
-          source_reference: sourceReference.trim() || null,
-          tags: parseTags(tags),
-        },
-      });
-      await load();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Save failed");
-    } finally {
-      setPending(false);
-    }
-  }
-
-  async function saveLinks() {
-    if (!isAdmin) return;
-    setPending(true);
-    setError(null);
-    try {
-      const d = await apiFetch<RequirementDetail>(
-        `/api/v1/projects/${projectId}/requirements/${requirementId}/test-cases`,
-        {
-          method: "PUT",
-          json: { test_case_ids: Array.from(selectedTc) },
-        },
-      );
-      setDetail(d);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not update links");
-    } finally {
-      setPending(false);
-    }
-  }
-
   async function remove() {
     if (!isAdmin || !detail) return;
     if (!window.confirm(`Delete requirement ${detail.code}?`)) return;
-    setPending(true);
     try {
       await apiFetch(`/api/v1/projects/${projectId}/requirements/${requirementId}`, { method: "DELETE" });
       router.replace(`/projects/${projectId}/requirements`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Delete failed");
-    } finally {
-      setPending(false);
     }
   }
 
-  function toggleTc(id: number) {
-    setSelectedTc((prev) => {
-      const n = new Set(prev);
-      if (n.has(id)) n.delete(id);
-      else n.add(id);
-      return n;
-    });
-  }
-
   if (loading || !detail) {
-    return <p className="text-sm text-ink-muted">{error ?? "Loading…"}</p>;
+    return <p className="text-sm text-slate-500">{error ?? "Loading…"}</p>;
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-10">
-      <div>
-        <Link href={`/projects/${projectId}/requirements`} className="text-sm text-ink-muted hover:text-ink">
-          ← Requirements
-        </Link>
-        <div className="mt-2 flex flex-wrap items-baseline gap-3">
-          <h2 className="text-xl font-semibold text-ink">{detail.title}</h2>
-          <span className="font-mono text-sm text-ink-muted">{detail.code}</span>
-        </div>
-      </div>
+    <div className="mx-auto max-w-6xl">
+      <Link
+        href={`/projects/${projectId}/requirements`}
+        className="inline-flex items-center gap-1 text-sm text-slate-600 hover:text-slate-900"
+      >
+        <BackIcon />
+        Requirements
+      </Link>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      <header className="mt-4 flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 pb-6">
+        <div className="min-w-0 space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-mono text-sm font-semibold text-blue-600">{detail.code}</span>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-50 px-2.5 py-0.5 text-xs font-medium text-slate-800 ring-1 ring-inset ring-slate-200">
+              <span className={`h-1.5 w-1.5 rounded-full ${statusDotClass(detail.status)}`} />
+              {requirementStatusLabel(detail.status)}
+            </span>
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset ${priorityPillClass(detail.priority)}`}
+            >
+              {requirementPriorityLabel(detail.priority)}
+            </span>
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">{detail.title}</h1>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {isAdmin && !roleLoading && (
+            <>
+              <Link
+                href={`/projects/${projectId}/requirements/${requirementId}/edit`}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
+              >
+                Edit
+              </Link>
+              <button
+                type="button"
+                onClick={() => void remove()}
+                className="rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50"
+              >
+                Delete
+              </button>
+            </>
+          )}
+        </div>
+      </header>
 
-      <form onSubmit={saveMeta} className="space-y-4 rounded-xl border border-border bg-surface-muted/20 p-6">
-        <h3 className="text-sm font-semibold text-ink">Details</h3>
-        <div>
-          <label className="text-xs font-medium text-ink-muted">Title *</label>
-          <input
-            required
-            disabled={!isAdmin || roleLoading}
-            className="mt-1 w-full rounded-md border border-border bg-surface px-3 py-2 text-sm disabled:opacity-60"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-          />
-        </div>
-        <div>
-          <label className="text-xs font-medium text-ink-muted">Description</label>
-          <textarea
-            disabled={!isAdmin || roleLoading}
-            className="mt-1 w-full rounded-md border border-border bg-surface px-3 py-2 text-sm disabled:opacity-60"
-            rows={4}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-          />
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label className="text-xs font-medium text-ink-muted">Module</label>
-            <select
-              disabled={!isAdmin || roleLoading}
-              className="mt-1 w-full rounded-md border border-border bg-surface px-3 py-2 text-sm disabled:opacity-60"
-              value={moduleId}
-              onChange={(e) => setModuleId(e.target.value)}
-            >
-              <option value="">— None —</option>
-              {modules.map((m) => (
-                <option key={m.id} value={m.id}>
-                  [{m.id}] {m.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs font-medium text-ink-muted">Source / reference</label>
-            <input
-              disabled={!isAdmin || roleLoading}
-              className="mt-1 w-full rounded-md border border-border bg-surface px-3 py-2 text-sm disabled:opacity-60"
-              value={sourceReference}
-              onChange={(e) => setSourceReference(e.target.value)}
-            />
-          </div>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label className="text-xs font-medium text-ink-muted">Priority</label>
-            <select
-              disabled={!isAdmin || roleLoading}
-              className="mt-1 w-full capitalize disabled:opacity-60"
-              value={priority}
-              onChange={(e) => setPriority(e.target.value)}
-            >
-              {PRIORITY.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs font-medium text-ink-muted">Status</label>
-            <select
-              disabled={!isAdmin || roleLoading}
-              className="mt-1 w-full disabled:opacity-60"
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-            >
-              {REQUIREMENT_STATUS.map((s) => (
-                <option key={s} value={s}>
-                  {s.replace("_", " ")}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-        <div>
-          <label className="text-xs font-medium text-ink-muted">Tags</label>
-          <input
-            disabled={!isAdmin || roleLoading}
-            className="mt-1 w-full rounded-md border border-border bg-surface px-3 py-2 text-sm disabled:opacity-60"
-            value={tags}
-            onChange={(e) => setTags(e.target.value)}
-          />
-        </div>
-        {isAdmin && !roleLoading && (
-          <div className="flex flex-wrap gap-3">
-            <button
-              type="submit"
-              disabled={pending}
-              className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
-            >
-              Save details
-            </button>
-            <button
-              type="button"
-              onClick={() => void remove()}
-              className="rounded-md border border-red-300 px-4 py-2 text-sm text-red-700 dark:border-red-800 dark:text-red-400"
-            >
-              Delete
-            </button>
-          </div>
-        )}
-      </form>
+      {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
 
-      <div className="rounded-xl border border-border bg-surface-muted/20 p-6">
-        <h3 className="text-sm font-semibold text-ink">Linked test cases</h3>
-        <p className="mt-1 text-xs text-ink-muted">
-          Select which test cases validate this requirement. You can also link from a test case detail page.
-        </p>
-        <ul className="mt-4 max-h-72 space-y-2 overflow-y-auto rounded-md border border-border bg-surface p-3">
-          {allTestCases.length === 0 && <li className="text-sm text-ink-muted">No test cases in this project yet.</li>}
-          {allTestCases.map((tc) => (
-            <li key={tc.id} className="flex items-start gap-3 text-sm">
-              <input
-                type="checkbox"
-                className="mt-1"
-                checked={selectedTc.has(tc.id)}
-                disabled={!isAdmin || roleLoading}
-                onChange={() => toggleTc(tc.id)}
-              />
-              <div>
-                <span className="font-mono text-xs text-ink-muted">{tc.code}</span>
-                <Link
-                  href={`/projects/${projectId}/test-cases/${tc.id}`}
-                  className="ml-2 font-medium text-accent hover:underline"
-                >
-                  {tc.feature_name || tc.test_scenario?.slice(0, 80) || "Untitled"}
-                </Link>
-                <span className="ml-2 text-xs capitalize text-ink-muted">{tc.status}</span>
+      <div className="mt-8 grid gap-6 lg:grid-cols-3">
+        <div className="space-y-6 lg:col-span-2">
+          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h2 className="text-sm font-semibold text-slate-900">Description</h2>
+            <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-slate-600">
+              {detail.description?.trim() ? detail.description : "No description provided."}
+            </p>
+          </section>
+
+          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h2 className="text-sm font-semibold text-slate-900">Linked Test Cases ({detail.test_cases.length})</h2>
+            <ul className="mt-4 space-y-3">
+              {detail.test_cases.length === 0 && (
+                <li className="text-sm text-slate-500">No test cases linked yet. Use Edit to link test cases.</li>
+              )}
+              {detail.test_cases.map((tc) => (
+                <li key={tc.id} className="flex flex-wrap items-center gap-2 border-b border-slate-100 pb-3 last:border-0 last:pb-0">
+                  <Link
+                    href={`/projects/${projectId}/test-cases/${tc.id}`}
+                    className="min-w-0 flex-1 text-sm font-medium text-blue-600 hover:underline"
+                  >
+                    <span className="font-mono text-xs text-slate-500">{tc.code}</span>{" "}
+                    <span className="text-slate-900">{tc.title}</span>
+                  </Link>
+                  <span
+                    className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${priorityPillClass(tc.priority ?? "medium")}`}
+                  >
+                    {requirementPriorityLabel(tc.priority ?? "medium")}
+                  </span>
+                  <span
+                    className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium capitalize ring-1 ring-inset ${tcStatusBadgeClass(tc.status)}`}
+                  >
+                    {tc.status}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h2 className="text-sm font-semibold text-slate-900">Comments (0)</h2>
+            <p className="mt-3 text-sm text-slate-500">No comments yet.</p>
+            <p className="mt-4 text-xs text-slate-400">Comments will be available in a future update.</p>
+          </section>
+        </div>
+
+        <aside className="space-y-6">
+          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h2 className="text-sm font-semibold text-slate-900">Details</h2>
+            <dl className="mt-4 space-y-3 text-sm">
+              <div className="flex justify-between gap-2">
+                <dt className="text-slate-500">Status</dt>
+                <dd className="font-medium text-slate-800">{requirementStatusLabel(detail.status)}</dd>
               </div>
-            </li>
-          ))}
-        </ul>
-        {isAdmin && !roleLoading && (
-          <button
-            type="button"
-            disabled={pending}
-            onClick={() => void saveLinks()}
-            className="mt-4 rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
-          >
-            Save links
-          </button>
-        )}
+              <div className="flex justify-between gap-2">
+                <dt className="text-slate-500">Priority</dt>
+                <dd className="font-medium text-slate-800">{requirementPriorityLabel(detail.priority)}</dd>
+              </div>
+              <div className="flex justify-between gap-2">
+                <dt className="text-slate-500">Module</dt>
+                <dd className="max-w-[60%] text-right font-medium text-slate-800">
+                  {moduleCellLabel(detail.module_id, modules, detail.module_name) || "—"}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-2">
+                <dt className="text-slate-500">Source</dt>
+                <dd className="text-right text-slate-800">{detail.source_reference ?? "—"}</dd>
+              </div>
+              <div className="flex justify-between gap-2">
+                <dt className="text-slate-500">Created</dt>
+                <dd className="text-slate-800">{formatShortDate(detail.created_at)}</dd>
+              </div>
+              <div className="flex justify-between gap-2">
+                <dt className="text-slate-500">Updated</dt>
+                <dd className="text-slate-800">{formatShortDate(detail.updated_at)}</dd>
+              </div>
+            </dl>
+          </section>
+
+          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h2 className="text-sm font-semibold text-slate-900">Tags</h2>
+            {detail.tags && detail.tags.length > 0 ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {detail.tags.map((t) => (
+                  <span
+                    key={t}
+                    className="rounded-md bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-800 ring-1 ring-inset ring-blue-100"
+                  >
+                    {t}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-3 text-sm text-slate-500">No tags</p>
+            )}
+          </section>
+
+          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h2 className="text-sm font-semibold text-slate-900">Coverage Summary</h2>
+            <dl className="mt-4 space-y-3 text-sm">
+              <div className="flex justify-between gap-2">
+                <dt className="text-slate-500">Linked TCs</dt>
+                <dd className="font-semibold tabular-nums text-slate-900">{detail.test_cases.length}</dd>
+              </div>
+              <div className="flex justify-between gap-2">
+                <dt className="text-slate-500">Defects (open)</dt>
+                <dd
+                  className={`font-semibold tabular-nums ${(detail.open_defects_count ?? 0) > 0 ? "text-red-600" : "text-slate-900"}`}
+                >
+                  {detail.open_defects_count ?? 0}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-2">
+                <dt className="text-slate-500">Total Executions</dt>
+                <dd className="font-semibold tabular-nums text-slate-900">{detail.total_executions_count ?? 0}</dd>
+              </div>
+            </dl>
+          </section>
+        </aside>
       </div>
     </div>
   );

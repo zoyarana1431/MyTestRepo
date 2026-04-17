@@ -25,13 +25,15 @@ def _exec(db: Session, project_id: int, execution_id: int) -> Execution | None:
     return e
 
 
-def _tc_title(tc: TestCase) -> str:
-    if tc.feature_name:
-        return tc.feature_name.strip()
-    if tc.test_scenario:
-        t = tc.test_scenario.strip()
-        return t[:100] + ("…" if len(t) > 100 else "")
-    return tc.code
+def _tc_primary_title(tc: TestCase) -> str:
+    """First line of test scenario, aligned with frontend testCaseListHeading primary."""
+    raw = (tc.test_scenario or "").strip()
+    if raw:
+        first = raw.splitlines()[0].strip()
+        if first:
+            return first
+    fe = (tc.feature_name or "").strip()
+    return fe or tc.code
 
 
 def _validate_req_tc(db: Session, requirement_id: int | None, test_case_id: int) -> None:
@@ -84,12 +86,15 @@ def list_executions(
     out: list[ExecutionListItem] = []
     for e in rows:
         tc = db.get(TestCase, e.test_case_id)
+        cyc = db.get(ExecutionCycle, e.execution_cycle_id) if e.execution_cycle_id else None
         base = ExecutionRead.model_validate(e)
         out.append(
             ExecutionListItem(
                 **base.model_dump(),
                 test_case_code=tc.code if tc else "",
-                test_case_title=_tc_title(tc) if tc else "",
+                test_case_title=_tc_primary_title(tc) if tc else "",
+                execution_cycle_code=cyc.code if cyc else None,
+                execution_cycle_name=cyc.name if cyc else None,
             )
         )
     return out
@@ -162,3 +167,19 @@ def get_execution(
     if e is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Execution not found")
     return e
+
+
+@router.delete("/{execution_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_execution(
+    project_id: int,
+    execution_id: int,
+    user: CurrentUser,
+    db: Session = Depends(get_db_session),
+) -> None:
+    require_project_admin(db, user, project_id)
+    get_project_or_404(db, project_id)
+    e = _exec(db, project_id, execution_id)
+    if e is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Execution not found")
+    db.delete(e)
+    db.commit()

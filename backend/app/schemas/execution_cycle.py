@@ -35,3 +35,14 @@ class ExecutionCycleRead(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class ExecutionCycleListItem(ExecutionCycleRead):
+    """List view with aggregated execution counts for the cycle."""
+
+    total_executions: int = 0
+    pass_count: int = 0
+    fail_count: int = 0
+    blocked_count: int = 0
+    not_run_count: int = 0
+    retest_count: int = 0

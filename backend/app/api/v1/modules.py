@@ -98,10 +98,12 @@ def create_module(
     require_project_admin(db, user, project_id)
     get_project_or_404(db, project_id)
     _validate_parent(db, project_id, body.parent_id, None)
+    desc = body.description.strip() if body.description and body.description.strip() else None
     mod = Module(
         project_id=project_id,
         parent_id=body.parent_id,
         name=body.name.strip(),
+        description=desc,
         sort_order=body.sort_order,
     )
     db.add(mod)
@@ -128,6 +130,9 @@ def update_module(
         _validate_parent(db, project_id, new_parent, mod.id)
     if "name" in data and data["name"] is not None:
         data["name"] = data["name"].strip()
+    if "description" in data and data["description"] is not None:
+        d = str(data["description"]).strip()
+        data["description"] = d if d else None
     for k, v in data.items():
         setattr(mod, k, v)
     db.commit()

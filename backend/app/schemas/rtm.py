@@ -5,6 +5,8 @@ class RTMRequirementRow(BaseModel):
     requirement_id: int
     code: str
     title: str
+    priority: str
+    requirement_status: str
     module_id: int | None
     module_name: str | None
     linked_test_case_count: int
@@ -38,3 +40,8 @@ class RTMProjectSummary(BaseModel):
     defect_open: int
     defect_closed: int
     coverage_pct: float
+    # QA Manager–style headline metrics (derived from requirement rows with same filters).
+    requirement_tc_coverage_pct: float = 0.0
+    passing_requirements: int = 0
+    failing_requirements: int = 0
+    not_covered_requirements: int = 0

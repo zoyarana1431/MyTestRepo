@@ -1,116 +1,17 @@
 "use client";
 
-import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useState } from "react";
-import { apiFetch, ApiError } from "@/lib/api";
-import { EXECUTION_CYCLE_STATUS } from "@/lib/qa-options";
-import { useProjectRole } from "@/hooks/use-project-role";
-import type { ExecutionCycle } from "@/types/api";
+import { useEffect } from "react";
 
-export default function NewRunPage() {
+/** Opens the create modal on the runs list (`?create=1`). */
+export default function NewRunRedirectPage() {
   const params = useParams();
-  const projectId = params.projectId as string;
   const router = useRouter();
-  const { isAdmin, loading: roleLoading } = useProjectRole(projectId);
-  const [name, setName] = useState("");
-  const [buildVersion, setBuildVersion] = useState("");
-  const [description, setDescription] = useState("");
-  const [status, setStatus] = useState("planned");
-  const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  const projectId = params.projectId as string;
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!isAdmin) return;
-    setPending(true);
-    setError(null);
-    try {
-      await apiFetch<ExecutionCycle>(`/api/v1/projects/${projectId}/execution-cycles`, {
-        method: "POST",
-        json: {
-          name: name.trim(),
-          build_version: buildVersion.trim() || null,
-          description: description.trim() || null,
-          status,
-        },
-      });
-      router.replace(`/projects/${projectId}/runs`);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed");
-    } finally {
-      setPending(false);
-    }
-  }
+  useEffect(() => {
+    router.replace(`/projects/${projectId}/runs?create=1`);
+  }, [projectId, router]);
 
-  if (!roleLoading && !isAdmin) {
-    return (
-      <p className="text-sm text-ink-muted">
-        <Link href={`/projects/${projectId}/runs`} className="text-accent">
-          Back
-        </Link>{" "}
-        — admin only.
-      </p>
-    );
-  }
-
-  return (
-    <div className="mx-auto max-w-lg">
-      <Link href={`/projects/${projectId}/runs`} className="text-sm text-ink-muted hover:text-ink">
-        ← Runs
-      </Link>
-      <h2 className="mt-4 text-lg font-semibold text-ink">New execution cycle</h2>
-      <form onSubmit={onSubmit} className="mt-8 space-y-4">
-        <div>
-          <label className="text-xs font-medium text-ink-muted">Name *</label>
-          <input
-            required
-            className="mt-1 w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Regression — Sprint 12"
-          />
-        </div>
-        <div>
-          <label className="text-xs font-medium text-ink-muted">Build version</label>
-          <input
-            className="mt-1 w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
-            value={buildVersion}
-            onChange={(e) => setBuildVersion(e.target.value)}
-          />
-        </div>
-        <div>
-          <label className="text-xs font-medium text-ink-muted">Description</label>
-          <textarea
-            className="mt-1 w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
-            rows={3}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-          />
-        </div>
-        <div>
-          <label className="text-xs font-medium text-ink-muted">Status</label>
-          <select
-            className="mt-1 w-full capitalize"
-            value={status}
-            onChange={(e) => setStatus(e.target.value)}
-          >
-            {EXECUTION_CYCLE_STATUS.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-        </div>
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        <button
-          type="submit"
-          disabled={pending}
-          className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
-        >
-          {pending ? "Saving…" : "Create run"}
-        </button>
-      </form>
-    </div>
-  );
+  return <p className="text-sm text-slate-500">Opening create cycle…</p>;
 }

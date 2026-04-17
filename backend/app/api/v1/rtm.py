@@ -21,12 +21,14 @@ def _filters(
     date_from: str | None,
     date_to: str | None,
     execution_cycle_id: int | None,
+    requirement_status: str | None,
 ) -> RTMFilters:
     return RTMFilters(
         module_id=module_id,
         date_from=_parse_dt(date_from),
         date_to=_parse_dt(date_to),
         execution_cycle_id=execution_cycle_id,
+        requirement_status=requirement_status,
     )
 
 
@@ -39,10 +41,13 @@ def rtm_requirements(
     date_from: str | None = None,
     date_to: str | None = None,
     execution_cycle_id: int | None = None,
+    status: str | None = Query(None, description="Filter by requirement workflow status (e.g. draft, approved)."),
 ) -> list[RTMRequirementRow]:
     require_project_member(db, user, project_id)
     get_project_or_404(db, project_id)
-    return rtm_by_requirement(db, project_id, _filters(module_id, date_from, date_to, execution_cycle_id))
+    return rtm_by_requirement(
+        db, project_id, _filters(module_id, date_from, date_to, execution_cycle_id, status)
+    )
 
 
 @router.get("/modules", response_model=list[RTMModuleRow])
@@ -54,10 +59,11 @@ def rtm_modules(
     date_from: str | None = None,
     date_to: str | None = None,
     execution_cycle_id: int | None = None,
+    status: str | None = Query(None, description="Filter by requirement workflow status (e.g. draft, approved)."),
 ) -> list[RTMModuleRow]:
     require_project_member(db, user, project_id)
     get_project_or_404(db, project_id)
-    return rtm_by_module(db, project_id, _filters(module_id, date_from, date_to, execution_cycle_id))
+    return rtm_by_module(db, project_id, _filters(module_id, date_from, date_to, execution_cycle_id, status))
 
 
 @router.get("/project-summary", response_model=RTMProjectSummary)
@@ -69,7 +75,10 @@ def rtm_project(
     date_from: str | None = None,
     date_to: str | None = None,
     execution_cycle_id: int | None = None,
+    status: str | None = Query(None, description="Filter by requirement workflow status (e.g. draft, approved)."),
 ) -> RTMProjectSummary:
     require_project_member(db, user, project_id)
     get_project_or_404(db, project_id)
-    return rtm_project_summary(db, project_id, _filters(module_id, date_from, date_to, execution_cycle_id))
+    return rtm_project_summary(
+        db, project_id, _filters(module_id, date_from, date_to, execution_cycle_id, status)
+    )
